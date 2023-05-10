@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8"> <!--設置文件的字符集為UTF-8-->
+    <meta http-equiv="X-UA-Compatible" content="IE=edge"> <!--設置瀏覽器的相容模式-->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"> <!--響應式設計-->
+    <title>錄音/Audio Recording</title> <!--網頁標題-->
+    <link rel="stylesheet" href="recording_control_style.css"> <!--引用樣式表，用於錄音控制樣式-->
+    <link rel="stylesheet" href="RT_volume_display_style.css"> <!--引用樣式表，用於即時音量顯示樣式-->
+    <link rel="stylesheet" href="audio_segment_style.css"> <!--引用樣式表，用於音訊片段顯示樣式-->
+    <script src="WebAudioRecorder.js"></script> <!--引用WebAudioRecorder.js庫-->
+    <script type="module" src="main.js"></script> <!--引用JavaScript文件-->
+
+    <!--JavaScript腳本，用於設置WebAudioRecorder.js庫所在的目錄位置-->
+    <script>  
+      document.addEventListener('DOMContentLoaded', function () {
+        WebAudioRecorder.workerDir = './';  
+      });
+    </script>
+
+    <!--CSS樣式-->
+    <style>
+      body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- 錄音功能 -->
+    <h1>錄音/Audio Recording</h1>
+    <div class="container">
+      <span class="volume-label">即時音量/Real Time Volume: </span> <!--文字說明，用於顯示即時音量-->
+
+      <div class="volume-container"> <!--容器，用於顯示即時音量-->
+        <div class="volume-bar" id="volumeBar"></div> <!--音量條，用於顯示音量大小-->
+      </div>
+
+      <span class="volume-label">控制音量/Control Volume: </span> <!--文字說明，用於顯示控制音量-->
+      
+      <div class="volume-controls"> <!--容器，用於包含音量控制元素-->
+        <input type="range" id="volumeControl" min="0" max="100" value="100"> <!--音量控制滑塊-->
+      </div>
+
+      <div class="recording-controls"> <!--容器，用於包含錄音控制元素-->
+        <button id="startBtn">開始錄音/Start Recording</button><!--錄音開始按鈕-->
+        <button id="pauseBtn" disabled>暫停錄音/Pause</button><!--錄音暫停按鈕-->
+        <button id="stopBtn" disabled>停止錄音/Stop Recording</button><!--錄音停止按鈕-->
+      </div>
+    </div>
+    <!-- 錄音功能 -->
+  </body>
+</html>
