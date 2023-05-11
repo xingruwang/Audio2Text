@@ -166,6 +166,27 @@ async function startRecording() {
         // 彈出提示，讓用戶知道錄音無法開始
         alert("無法開始錄製，請檢查設備並重試。");
     }
+
+    // 創建 AudioContext 實例
+    const audioContext = new AudioContext();
+
+    // 創建 ScriptProcessorNode 來實時處理音訊數據
+    const scriptProcessorNode = audioContext.createScriptProcessor(4096, 1, 1);
+
+    // 連接節點
+    navigator.mediaDevices.getUserMedia({ audio: true })
+    .then(stream => {
+        const mediaStreamSource = audioContext.createMediaStreamSource(stream);
+        mediaStreamSource.connect(scriptProcessorNode);
+        scriptProcessorNode.connect(audioContext.destination);
+    });
+
+    // 監聽 onaudioprocess 事件
+    scriptProcessorNode.onaudioprocess = processAudio;
+
+    // 標記錄音已開始
+    recording = true;
+
 }
 
 // 根據音訊數據計算平均音量
@@ -284,6 +305,13 @@ async function stopRecording() {
         console.error("Error after MediaRecorder stopped:", error);
     }
     
+    // 斷開節點並停止錄音
+    scriptProcessorNode.disconnect(audioContext.destination);
+    audioContext.close();
+
+    // 標記錄音已停止
+    recording = false;
+
 }
 
 // 錄音結束後更新界面元素的函數
@@ -800,3 +828,92 @@ function splitSpeech(float32Array, isSpeech, minSilenceDuration, sampleRate) {
     // 返回找到的所有語音片段
     return segments;
 }
+
+let audioData = []; // 存儲音訊數據的數組
+
+function processAudio(event) {
+  // 獲取音訊數據
+  const inputBuffer = event.inputBuffer.getChannelData(0);
+
+  let audioData = []; // 存儲音訊數據的數組
+  let currentSegment = []; // 存儲當前音訊片段的數組
+  let silenceDuration = 0; // 連續低於閾值的音量持續時間
+  
+  function processAudio(event) {
+    // 獲取音訊數據
+    const inputBuffer = event.inputBuffer.getChannelData(0);
+  
+    // 遍歷音訊數據，實現音量閾值切割和時間切割
+    for (let i = 0; i < inputBuffer.length; i++) {
+      
+        const sample = inputBuffer[i];
+  
+      // 檢查音量是否低於閾值
+      if (Math.abs(sample) < 0.01) {
+        silenceDuration += 1 / audioContext.sampleRate;
+      } else {
+        silenceDuration = 0;
+      }
+  
+      // 將音訊樣本添加到當前片段
+      currentSegment.push(sample);
+  
+      // 檢查是否需要切割音訊
+      const segmentDuration = currentSegment.length / audioContext.sampleRate;
+      if (segmentDuration >= 30 || silenceDuration >= 0.5) {
+        
+      // 對當前片段進行前處理
+      const processedSegment = preprocessAudioSegment(currentSegment);
+
+      // 將處理後的音訊片段添加到音訊數據數組
+      audioData.push(processedSegment);
+
+      // 清空當前片段和連續低音量持續時間
+      currentSegment = [];
+      silenceDuration = 0;
+
+      // 檢查點：在控制台打印處理後的音訊片段長度
+      console.log('Processed audio segment length:', processedSegment.length);
+      }
+    }
+  }
+
+  // 將處理後的音訊數據添加到數組中
+  audioData.push(processedData);
+
+  // 檢查點：在控制台打印處理後的音訊數據長度
+  console.log('Processed audio data length:', audioData.length);
+}
+
+// 音訊前處理函數
+function preprocessAudioSegment(segment) {
+    // 1. 將音訊轉換為浮點數數組
+    // segment 已經是一個浮點數數組，因此不需要進一步轉換
+  
+    // 2. 音訊降噪
+    const denoisedSegment = denoiseAudio(segment);
+  
+    // 3. 增強語音信號
+    const enhancedSegment = enhanceSpeech(denoisedSegment);
+  
+    // 4. 音量正規化
+    const normalizedSegment = normalizeVolume(enhancedSegment);
+  
+    // 5. 頻率範圍過濾
+    const filteredSegment = filterFrequencyRange(normalizedSegment);
+  
+    // 6. 語音檢測
+    const speechDetectedSegment = detectSpeech(filteredSegment);
+  
+    // 7. 將浮點數數組轉換回適合傳輸的格式
+    const processedSegment = float32ArrayToWavBlob(speechDetectedSegment);
+  
+    // 返回處理後的音訊片段
+    return processedSegment;
+  }
+
+// 合併音訊數據
+//const mergedAudioData = mergeAudioData(audioData);
+
+// 將合併後的音訊數據發送至 OpenAI 進行語音轉文字
+//sendToOpenAI(mergedAudioData);
