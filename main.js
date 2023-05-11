@@ -194,8 +194,7 @@ async function startRecording() {
     });
 
     // 監聽 onaudioprocess 事件
-    scriptProcessorNode.onaudioprocess = processAudio;
-
+    scriptProcessorNode.onaudioprocess = (audioProcessingEvent) => processAudio(audioProcessingEvent, audioContext);
     // 標記錄音已開始
     recording = true;
 
@@ -843,7 +842,7 @@ function splitSpeech(float32Array, isSpeech, minSilenceDuration, sampleRate) {
 
 let audioData = []; // 存儲音訊數據的數組
 
-function processAudio(event) {
+function processAudio(audioProcessingEvent, audioContext) {
 
     let processedData = [];
 
