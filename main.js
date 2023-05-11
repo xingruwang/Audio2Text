@@ -118,7 +118,7 @@ async function startRecording() {
             const finalBlob = new Blob(chunks, { type: 'audio/webm' });    
 
             // 使用函數1將音訊轉換為浮點數數組
-            const float32Array = await wavToFloat32Array(finalBlob);
+            const float32Array = await wavToFloat32Array(blob, audioContext);
             console.log("Converted WAV to Float32Array:", float32Array);
 
             // 2 音訊降噪
@@ -616,7 +616,7 @@ async function convertBlobToAudioBuffer(blob) {
 }
 
 // 函數1：將WAV格式音訊轉換為浮點數數組
-async function wavToFloat32Array(blob) {
+async function wavToFloat32Array(wavBlob, audioContext) {
 
     // 將 Blob 物件轉換為 ArrayBuffer 物件
     const arrayBuffer = await blob.arrayBuffer(); 
