@@ -1,5 +1,5 @@
 let mediaRecorder; //媒體錄製器對象，用於錄製音訊
-//let audioContext; //音頻上下文對象，用於音頻處理
+let audioContext; //音頻上下文對象，用於音頻處理
 let analyser; //音頻分析器，用於分析音頻
 let dataArray; //數組，用於儲存音頻數據
 let gainNode; //音量節點，用於控制音量
@@ -17,8 +17,7 @@ let stream; // 定義一個變量來存儲音訊流
 let isRecordingStopped = false; // 定義一個變量，表示錄音是否已停止
 let scriptProcessorNode;
 
-
-const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+//const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
 // 更新按鈕狀態等界面元素
 function updateUIWhilePaused() {
@@ -48,7 +47,7 @@ async function startRecording() {
         }
         
         // 創建 AudioContext，用於處理和控制 Web 音頻
-        const localAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
         const stream = await navigator.mediaDevices.getUserMedia({audio: true});
 
         // 初始化音訊片段數組
@@ -61,25 +60,25 @@ async function startRecording() {
         const systemStream = await navigator.mediaDevices.getDisplayMedia({ audio: true });
 
         // 創建分析器節點，用於提取音頻數據
-        analyser = localAudioContext.createAnalyser();
+        analyser = audioContext.createAnalyser();
 
         // 創建用戶麥克風音訊源節點
-        const micSourceNode = localAudioContext.createMediaStreamSource(micStream);
+        const micSourceNode = audioContext.createMediaStreamSource(micStream);
 
         // 創建系統音訊源節點
-        const systemSourceNode = localAudioContext.createMediaStreamSource(systemStream);
+        const systemSourceNode = audioContext.createMediaStreamSource(systemStream);
 
         // 創建增益節點，用於調整音量
-        gainNode = localAudioContext.createGain();
+        gainNode = audioContext.createGain();
 
         // 創建 ScriptProcessor 節點，用於處理音訊數據
-        const destinationNode = localAudioContext.createScriptProcessor(4096, 1, 1);
+        const destinationNode = audioContext.createScriptProcessor(4096, 1, 1);
 
         // 新增輸出音量節點
-        const outputGainNode = localAudioContext.createGain();
+        const outputGainNode = audioContext.createGain();
 
         // 新增 MediaStreamDestination 節點，用於將音訊流合併
-        const mediaStreamDestination = localAudioContext.createMediaStreamDestination();
+        const mediaStreamDestination = audioContext.createMediaStreamDestination();
 
         // 連接用戶麥克風音訊源節點、增益節點和輸出音量節點
         micSourceNode.connect(gainNode);
@@ -95,7 +94,7 @@ async function startRecording() {
         outputGainNode.connect(destinationNode);
 
         // 連接 ScriptProcessor 節點和 AudioContext 的 destination，使音訊可以播放
-        destinationNode.connect(localAudioContext.destination);
+        destinationNode.connect(audioContext.destination);
 
         // 將合併後的音訊流轉換為 MediaStream，僅包含音訊軌道
         const combinedStream = new MediaStream([...mediaStreamDestination.stream.getAudioTracks()]);
@@ -143,7 +142,7 @@ async function startRecording() {
             console.log("Speech Detected:", speechDetected);
 
             //7 語音分段
-            const speechSegments = splitSpeech(filteredArray, speechDetected, minSilenceDuration, localAudioContext.sampleRate);
+            const speechSegments = splitSpeech(filteredArray, speechDetected, minSilenceDuration, audioContext.sampleRate);
             console.log("Speech Segments:", speechSegments);
 
             // 使用函數9將浮點數數組轉換回適合傳輸的格式
