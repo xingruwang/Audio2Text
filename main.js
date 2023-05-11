@@ -1,5 +1,5 @@
 let mediaRecorder; //媒體錄製器對象，用於錄製音訊
-let audioContext; //音頻上下文對象，用於音頻處理
+//let audioContext; //音頻上下文對象，用於音頻處理
 let analyser; //音頻分析器，用於分析音頻
 let dataArray; //數組，用於儲存音頻數據
 let gainNode; //音量節點，用於控制音量
@@ -16,6 +16,8 @@ let destinationNode; // 定義一個變量來存儲目標節點，用於錄音
 let stream; // 定義一個變量來存儲音訊流
 let isRecordingStopped = false; // 定義一個變量，表示錄音是否已停止
 
+const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
 // 更新按鈕狀態等界面元素
 function updateUIWhilePaused() {
     
@@ -31,6 +33,8 @@ function updateUIWhilePaused() {
 //開始錄音功能
 async function startRecording() {
     
+    let recording = [];
+
     // 定義一個變量，表示錄音是否已停止
     isRecordingStopped = false;
     
@@ -832,57 +836,60 @@ function splitSpeech(float32Array, isSpeech, minSilenceDuration, sampleRate) {
 let audioData = []; // 存儲音訊數據的數組
 
 function processAudio(event) {
-  // 獲取音訊數據
-  const inputBuffer = event.inputBuffer.getChannelData(0);
 
-  let audioData = []; // 存儲音訊數據的數組
-  let currentSegment = []; // 存儲當前音訊片段的數組
-  let silenceDuration = 0; // 連續低於閾值的音量持續時間
-  
-  function processAudio(event) {
+    let processedData = [];
+
     // 獲取音訊數據
     const inputBuffer = event.inputBuffer.getChannelData(0);
+
+    let audioData = []; // 存儲音訊數據的數組
+    let currentSegment = []; // 存儲當前音訊片段的數組
+    let silenceDuration = 0; // 連續低於閾值的音量持續時間
   
+  
+    // 獲取音訊數據
+    //const inputBuffer = event.inputBuffer.getChannelData(0);
+
     // 遍歷音訊數據，實現音量閾值切割和時間切割
     for (let i = 0; i < inputBuffer.length; i++) {
-      
-        const sample = inputBuffer[i];
-  
-      // 檢查音量是否低於閾值
-      if (Math.abs(sample) < 0.01) {
-        silenceDuration += 1 / audioContext.sampleRate;
-      } else {
-        silenceDuration = 0;
-      }
-  
-      // 將音訊樣本添加到當前片段
-      currentSegment.push(sample);
-  
-      // 檢查是否需要切割音訊
-      const segmentDuration = currentSegment.length / audioContext.sampleRate;
-      if (segmentDuration >= 30 || silenceDuration >= 0.5) {
         
-      // 對當前片段進行前處理
-      const processedSegment = preprocessAudioSegment(currentSegment);
+        const sample = inputBuffer[i];
 
-      // 將處理後的音訊片段添加到音訊數據數組
-      audioData.push(processedSegment);
+        // 檢查音量是否低於閾值
+        if (Math.abs(sample) < 0.01) {
+        silenceDuration += 1 / audioContext.sampleRate;
+        } else {
+        silenceDuration = 0;
+        }
 
-      // 清空當前片段和連續低音量持續時間
-      currentSegment = [];
-      silenceDuration = 0;
+        // 將音訊樣本添加到當前片段
+        currentSegment.push(sample);
 
-      // 檢查點：在控制台打印處理後的音訊片段長度
-      console.log('Processed audio segment length:', processedSegment.length);
-      }
+        // 檢查是否需要切割音訊
+        const segmentDuration = currentSegment.length / audioContext.sampleRate;
+        if (segmentDuration >= 30 || silenceDuration >= 0.5) {
+        
+        // 對當前片段進行前處理
+        const processedSegment = preprocessAudioSegment(currentSegment);
+
+        // 將處理後的音訊片段添加到音訊數據數組
+        audioData.push(processedSegment);
+
+        // 清空當前片段和連續低音量持續時間
+        currentSegment = [];
+        silenceDuration = 0;
+
+        // 檢查點：在控制台打印處理後的音訊片段長度
+        console.log('Processed audio segment length:', processedSegment.length);
+        }
     }
-  }
+  
 
-  // 將處理後的音訊數據添加到數組中
-  audioData.push(processedData);
+     // 將處理後的音訊數據添加到數組中
+    audioData.push(processedData);
 
-  // 檢查點：在控制台打印處理後的音訊數據長度
-  console.log('Processed audio data length:', audioData.length);
+    // 檢查點：在控制台打印處理後的音訊數據長度
+    console.log('Processed audio data length:', audioData.length);
 }
 
 // 音訊前處理函數
