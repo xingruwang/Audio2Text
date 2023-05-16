@@ -7,7 +7,7 @@ let chunks = []; //數組，用於儲存音訊片段
 let volumeBar; //音量條對象，用於顯示音量
 let volumeThreshold = 10; //音量閾值，用於檢測是否有語音信號
 let minSilenceDuration = 0.5; //最小靜音持續時間，用於檢測語音信號結束
-let segmentDuration = 25; //音訊片段持續時間，用於將音訊分割成多個片段
+let segmentDuration = 30; //音訊片段持續時間，用於將音訊分割成多個片段
 let micStream; // 用於存儲麥克風音頻流
 let systemStream; // 用於存儲系統音頻流
 let silenceStart = null; //靜音開始時間
@@ -16,8 +16,12 @@ let destinationNode; // 定義一個變量來存儲目標節點，用於錄音
 let stream; // 定義一個變量來存儲音訊流
 let isRecordingStopped = false; // 定義一個變量，表示錄音是否已停止
 let scriptProcessorNode;
-
-//const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+let recording = false; // 在全局範圍內定義錄音變量
+let samples = []; // 存儲音訊樣本的數組
+let minVolume = Infinity; // 初始化最小音量
+let volumeThreshold_1 = 0; // 音量閥值
+//const axios = require('axios');// 引入axios
+let transcript = '';// 儲存所有的語音辨識文字
 
 // 更新按鈕狀態等界面元素
 function updateUIWhilePaused() {
@@ -114,43 +118,6 @@ async function startRecording() {
             // 停止所有音軌
             systemStream.getTracks().forEach(track => track.stop()); 
 
-            // 使用 chunks 數據創建最終的 Blob 音訊文件
-            const finalBlob = new Blob(chunks, { type: 'audio/webm' });    
-
-            // 使用函數1將音訊轉換為浮點數數組
-            const float32Array = await wavToFloat32Array(Blob, audioContext);
-            console.log("Converted WAV to Float32Array:", float32Array);
-
-            // 2 音訊降噪
-            const denoisedArray = await denoiseAudio(float32Array);
-            console.log("Denoised Float32Array:", denoisedArray);
-
-            //3 增強語音信號
-            const enhancedArray = await enhanceSpeech(denoisedArray);
-            console.log("Enhanced Float32Array:", enhancedArray);
-
-            // 4 音量正規化
-            const normalizedArray = await normalizeVolume(enhancedArray);
-            console.log("Normalized Float32Array:", normalizedArray);
-
-            ///5 頻率範圍過濾
-            const filteredArray = await filterFrequencyRange(normalizedArray, 300, 3400);
-            console.log("Filtered Float32Array:", filteredArray);
-
-            //6  語音檢測
-            const speechDetected = detectSpeech(filteredArray, volumeThreshold);
-            console.log("Speech Detected:", speechDetected);
-
-            //7 語音分段
-            const speechSegments = splitSpeech(filteredArray, speechDetected, minSilenceDuration, audioContext.sampleRate);
-            console.log("Speech Segments:", speechSegments);
-
-            // 使用函數9將浮點數數組轉換回適合傳輸的格式
-            const processedWavBlob = await float32ArrayToWavBlob(normalizedArray);
-            console.log("Converted Float32Array to WAV Blob:", processedWavBlob);            
-
-            // 下載處理後的音訊
-            downloadBlob(processedWavBlob, `processed_audio.wav`);
         };
         
         // 當可用數據時的回調函數
@@ -193,27 +160,14 @@ async function startRecording() {
         scriptProcessorNode.connect(audioContext.destination);
     });
 
+    //console.log('開始錄音');
+
     // 監聽 onaudioprocess 事件
-    scriptProcessorNode.onaudioprocess = (audioProcessingEvent) => processAudio(audioProcessingEvent, audioContext);
+    scriptProcessorNode.onaudioprocess = (audioProcessingEvent) => processAudio(audioProcessingEvent, audioContext);   
+    
     // 標記錄音已開始
     recording = true;
 
-}
-
-// 根據音訊數據計算平均音量
-function getAverageVolume(array) {
-    
-    let sum = 0; // 初始化總和為0
-    let count = 0; // 初始化計數為0
-
-    // 遍歷音訊數據數組
-    for (let i = 0; i < array.length; i++) {
-        sum += Math.abs(array[i]); // 將音訊數據的絕對值加到總和中
-        count++; // 增加計數
-    }
-
-    // 返回平均音量
-    return sum / count; 
 }
 
 // 在錄製過程中更新界面元素的函數
@@ -302,7 +256,7 @@ async function stopRecording() {
                 
                 // 釋放創建的音頻 URL
                 URL.revokeObjectURL(url); 
-
+audioContext
             }, 100);
         }
     
@@ -312,13 +266,16 @@ async function stopRecording() {
         micStream = null;
         systemStream = null;
         updateUIAfterRecording();
+
     } catch (error) {
         console.error("Error after MediaRecorder stopped:", error);
     }
     
     // 斷開節點並停止錄音
-    scriptProcessorNode.disconnect(audioContext.destination);
-    audioContext.close();
+    if (audioContext) {
+        scriptProcessorNode.disconnect(audioContext.destination);
+        audioContext.close();
+    }
 
     // 標記錄音已停止
     recording = false;
@@ -328,6 +285,8 @@ async function stopRecording() {
 // 錄音結束後更新界面元素的函數
 function updateUIAfterRecording() {
     // 更新按鈕狀態等界面元素
+
+
 }
 
 function pauseRecording() {
@@ -355,7 +314,6 @@ function pauseRecording() {
         // 將麥克風輸入音量設回正常
         gainNode.gain.value = 1; 
         
-        
         // 更新錄音時的界面元素
         updateUIWhileRecording(); 
     }
@@ -364,17 +322,7 @@ function pauseRecording() {
     }
 }
 
-// 此函數用於恢復錄音
-function resumeRecording() {
-    
-    // 輸出當前 MediaRecorder 是否正在錄音
-    console.log('MediaRecorder isRecording:', mediaRecorder.isRecording());
-   
-    // 如果 MediaRecorder 存在並且當前狀態為暫停，則恢復錄音
-    if (mediaRecorder && mediaRecorder.state === "paused") {
-        mediaRecorder.resume();
-    }
-}
+
 
 document.addEventListener('DOMContentLoaded', async () => {
     
@@ -431,106 +379,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
 });
-
-// 定義一個非同步函數 sliceAudio，將音訊切割成多個片段
-async function sliceAudio(blob, volumeThreshold, minSilenceDuration) {
-   
-    // 將傳入的音訊 blob 轉換成 AudioBuffer 對象
-    const audioBuffer = await new Promise((resolve, reject) => {
-        
-        // 創建一個具有 audio/wav 類型的 Response 對象
-        const response = new Response(blob, { type: 'audio/wav' });
-       
-        // 將 Response 對象轉換成 ArrayBuffer
-        response.arrayBuffer().then((data) => {
-           
-            // 使用 audioContext 將 ArrayBuffer 解碼成 AudioBuffer
-            audioContext.decodeAudioData(data, (decodedData) => {
-            
-                // 解碼成功，將解碼後的 AudioBuffer 返回
-                resolve(decodedData);
-            }, (error) => {
-             
-                // 解碼失敗，輸出錯誤信息並返回 null
-                console.error('Error decoding audio data:', error);
-                reject(null);
-            });
-        });
-    });
-
-    // 如果解碼失敗，返回空數組
-    if (!audioBuffer) {
-        return [];
-    }
-
-    // 獲取 AudioBuffer 的聲道數據（單聲道）
-    const channelData = audioBuffer.getChannelData(0);
-    // 獲取音訊的採樣率
-    const sampleRate = audioBuffer.sampleRate;
-    // 計算最小靜音持續時間對應的採樣點數
-    const minSilenceSamples = Math.floor(minSilenceDuration * sampleRate);
-    // 計算音量閾值對應的數值
-    const volumeThresholdValue = volumeThreshold / 100;
-
-    // 初始化各種變量
-    let startSample = 0;
-    let endSample = 0;
-    let silenceDuration = 0;
-    let isSilent = false;
-
-    // 存放切割後的音訊片段
-    const slicedAudioBuffers = [];
-
-    // 遍歷聲道數據中的每個採樣點
-    for (let i = 0; i < channelData.length; i++) {
-        
-        // 獲取當前採樣點的數值
-        const sample = channelData[i];
-
-        // 判斷當前採樣點是否低於音量閾值
-        const isSampleSilent = Math.abs(sample) < volumeThresholdValue;
-
-        if (!isSilent && isSampleSilent) {
-            // 如果之前的音訊不是靜音，且當前取樣為靜音，則將靜音持續時間設為1，並將 isSilent 設為 true
-            silenceDuration = 1;
-            isSilent = true;
-        } else if (isSilent && isSampleSilent) {
-            
-            // 如果之前的音訊為靜音，且當前取樣仍為靜音，則靜音持續時間加1
-            silenceDuration++;
-
-        } else if (isSilent && !isSampleSilent) {
-           
-            // 如果之前的音訊為靜音，且當前取樣不再為靜音，檢查靜音持續時間是否達到最小靜音持續時間
-            if (silenceDuration >= minSilenceSamples) {
-                
-                // 如果達到，則將 endSample 設為靜音段的開始位置，然後創建一個新的音訊片段
-                endSample = Math.max(startSample, i - silenceDuration);
-               
-                if (endSample - startSample > 0) {
-                    const sliceBuffer = audioContext.createBuffer(1, endSample - startSample, sampleRate);
-                    sliceBuffer.copyToChannel(channelData.subarray(startSample, endSample), 0);
-                    slicedAudioBuffers.push(sliceBuffer);
-                    startSample = i;
-                }
-            }
-
-            // 將 isSilent 設回為 false，表示結束靜音段
-            isSilent = false;
-        }
-    }
-
-    if (startSample < channelData.length && channelData.length - startSample >= sampleRate) { // 修改這一行
-        
-        // 如果最後一個非靜音片段的開始位置小於音訊長度，並且剩餘音訊長度大於等於一個取樣率，則創建一個新的音訊片段
-        const sliceBuffer = audioContext.createBuffer(1, channelData.length - startSample, sampleRate);
-        sliceBuffer.copyToChannel(channelData.subarray(startSample, channelData.length), 0);
-        slicedAudioBuffers.push(sliceBuffer);
-    }
-    
-    // 返回所有切割後的音訊片段
-    return slicedAudioBuffers;
-}
 
 function downloadBlob(blob, filename) {
     
@@ -599,56 +447,101 @@ async function bufferToBlob(audioBuffer) {
     return blob;
 }
 
-// 函數 - 將 AudioBuffer 轉換為 Blob
-async function convertAudioBufferToBlob(audioBuffer) {
-    return await bufferToBlob(audioBuffer);
-}
-
-// 函數 - 將 Blob 轉換為 AudioBuffer
-async function convertBlobToAudioBuffer(blob) {
-
-    // 將 Blob 對象轉換為 ArrayBuffer
-    const arrayBuffer = await new Response(blob).arrayBuffer();
-
-    // 使用 AudioContext 的 decodeAudioData 方法將 ArrayBuffer 轉換為 AudioBuffer
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-    return audioBuffer;
-}
-
-// 函數1：將WAV格式音訊轉換為浮點數數組
-async function wavToFloat32Array(wavBlob, audioContext) {
-
-    // 將 Blob 物件轉換為 ArrayBuffer 物件
-    const arrayBuffer = await blob.arrayBuffer(); 
-    
-    // 將 ArrayBuffer 物件解碼為 AudioBuffer 物件
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer); 
-    
-    // 從 AudioBuffer 物件中獲取浮點數數組（Float32Array）
-    const float32Array = audioBuffer.getChannelData(0); 
-    
-    // 返回浮點數數組
-    return float32Array; 
-}
-
 // 函數9：將浮點數數組轉換回適合傳輸的格式（Blob）
-async function float32ArrayToWavBlob(float32Array) {
+// 這是一個將浮點數數組轉換為WAV Blob對象的函數
+async function float32ArrayToWavBlob(audioContext, float32Array) {
+    // 創建一個AudioBuffer對象，並設置通道數、長度和採樣率
+    const audioBuffer = audioContext.createBuffer(1, float32Array.length, audioContext.sampleRate);
     
-    // 創建一個 AudioBuffer 物件，並設置通道數、長度和採樣率
-    const audioBuffer = audioContext.createBuffer(1, float32Array.length, audioContext.sampleRate); 
+    // 將浮點數數組複製到AudioBuffer對象的第0通道
+    audioBuffer.copyToChannel(float32Array, 0);
     
-    // 將浮點數數組複製到 AudioBuffer 物件的第 0 通道
-    audioBuffer.copyToChannel(float32Array, 0); 
+    // 使用OfflineAudioContext渲染音頻數據
+    const offlineAudioContext = new OfflineAudioContext({
+        numberOfChannels: 1,
+        length: float32Array.length,
+        sampleRate: audioContext.sampleRate
+    });
+    const source = offlineAudioContext.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(offlineAudioContext.destination);
+    source.start();
+    const renderedBuffer = await offlineAudioContext.startRendering();
     
-    // 將 AudioBuffer 物件轉換為 Blob 物件（WAV 格式）
-    const wavBlob = await bufferToBlob(audioBuffer); 
+    // 將渲染後的音頻數據寫入WAV Blob對象
+    const wavBlob = await bufferToWavBlob(renderedBuffer);
     
-    // 返回 Blob 物件
-    return wavBlob; 
+    // 返回Blob對象
+    return wavBlob;
 }
+
+function bufferToWavBlob(buffer) {
+    return new Promise((resolve, reject) => {
+        const worker = new Worker(URL.createObjectURL(new Blob([`
+        self.addEventListener('message', function(e) {
+            const buffer = e.data;
+            const numberOfChannels = buffer.numberOfChannels;
+            const sampleRate = buffer.sampleRate;
+            const length = buffer.length;
+            const wavData = new DataView(new ArrayBuffer(44 + length * numberOfChannels * 2));
+            const writeString = (view, offset, string) => {
+                for (let i = 0; i < string.length; i++) {
+                    view.setUint8(offset + i, string.charCodeAt(i));
+                }
+            };
+            // 設置WAV頭部信息
+            writeString(wavData, 0, 'RIFF');  // ChunkID
+            wavData.setUint32(4, 36 + length * numberOfChannels * 2, true);  // ChunkSize
+            writeString(wavData, 8, 'WAVE');  // Format
+            writeString(wavData, 12, 'fmt ');  // Subchunk1ID
+            wavData.setUint32(16, 16, true);  // Subchunk1Size
+            wavData.setUint16(20, 1, true);  // AudioFormat
+            wavData.setUint16(22, numberOfChannels, true);  // NumChannels
+            wavData.setUint32(24, sampleRate, true);  // SampleRate
+            wavData.setUint32(28, sampleRate * numberOfChannels * 2, true);  // ByteRate
+            wavData.setUint16(32, numberOfChannels * 2, true);  // BlockAlign
+            wavData.setUint16(34, 16, true);  // BitsPerSample
+            writeString(wavData, 36, 'data');  // Subchunk2ID
+            wavData.setUint32(40, length * numberOfChannels * 2, true);  // Subchunk2Size
+            // 寫入音頻數據
+            for (let i = 0; i < length; i++) {
+                for (let channel = 0; channel < numberOfChannels; channel++) {
+                    const sample = buffer.getChannelData(channel)[i];
+                    const x = sample * 0x7FFF;
+                    wavData.setInt16(44 + i * numberOfChannels * 2 + channel * 2, x, true);
+                }
+            }
+            // 返回WAV數據
+            self.postMessage({ wavData: wavData.buffer }, [wavData.buffer]);
+            self.close();
+        }, false);
+        `])));
+        worker.onmessage = function(e) {
+            // 將ArrayBuffer轉換為Blob對象
+            const wavBlob = new Blob([e.data.wavData], { type: 'audio/wav' });
+            resolve(wavBlob);
+        };
+        worker.onerror = function(e) {
+            reject(new Error(e.message));
+        };
+        // 提取 AudioBuffer 的通道數據到 Float32Array
+        const channelData = [];
+        for (let i = 0; i < buffer.numberOfChannels; i++) {
+            channelData.push(buffer.getChannelData(i));
+        }
+        // 將音頻數據傳遞給 Worker
+        worker.postMessage({
+            numberOfChannels: buffer.numberOfChannels,
+            sampleRate: buffer.sampleRate,
+            length: buffer.length,
+            channelData
+        });
+    });
+}
+
 
 // 音訊降噪
-async function denoiseAudio(float32Array) {
+function denoiseAudio(float32Array) {
    
     // 定義降噪強度
     const noiseReduction = 0.95;
@@ -666,14 +559,14 @@ async function denoiseAudio(float32Array) {
     }
 
     // 輸出處理後的音訊數據
-    console.log("Denoised audio:", float32Array);
+    //console.log("Denoised audio:", float32Array);
    
     // 返回處理後的音訊數據
     return float32Array;
 }
 
 // 增強語音信號
-async function enhanceSpeech(float32Array) {
+function enhanceSpeech(float32Array) {
     
     // 定義增益值
     const gain = 1.5;
@@ -684,14 +577,14 @@ async function enhanceSpeech(float32Array) {
     }
 
     // 輸出處理後的音訊數據
-    console.log("Enhanced audio:", float32Array);
+    //console.log("Enhanced audio:", float32Array);
     
     // 返回處理後的音訊數據
     return float32Array;
 }
 
 // 音量正規化
-async function normalizeVolume(float32Array) {
+function normalizeVolume(float32Array) {
     
     // 初始化最大音量值
     let max = 0;
@@ -710,15 +603,22 @@ async function normalizeVolume(float32Array) {
     }
 
     // 輸出處理後的音訊數據
-    console.log("Normalized audio:", float32Array);
+    //console.log("Normalized audio:", float32Array);
     
     // 返回處理後的音訊數據
     return float32Array;
 }
 
 // 函數5：過濾指定頻率範圍的音訊信號
-async function filterFrequencyRange(float32Array, lowFrequency, highFrequency) {
+async function filterFrequencyRange(audioContext, float32Array, lowFrequency, highFrequency) {
     
+    //console.log(audioContext);
+
+    if (float32Array.length === 0) {
+        // 如果為空，則直接返回原數組或者其他適當的預設值
+        return float32Array;
+    }
+
     // 創建一個離線音頻上下文
     const offlineContext = new OfflineAudioContext(1, float32Array.length, audioContext.sampleRate); 
 
@@ -762,172 +662,121 @@ async function filterFrequencyRange(float32Array, lowFrequency, highFrequency) {
     return renderedBuffer.getChannelData(0);
 }
 
-// 函數6：語音檢測
-function detectSpeech(float32Array, threshold) {
-    
-    // 創建一個布爾數組，表示音頻數據中的每個樣本是否為語音
-    const isSpeech = new Array(float32Array.length).fill(false);
-
-    // 遍歷音頻數據中的每個樣本
-    for (let i = 0; i < float32Array.length; i++) {
-       
-        // 如果樣本的絕對值大於閾值，則將對應的布爾值設為 true
-        if (Math.abs(float32Array[i]) > threshold) {
-            isSpeech[i] = true;
-        }
-    }
-
-    // 返回布爾數組，表示音頻數據中的每個樣本是否為語音
-    return isSpeech;
-}
-
-// 函數7：語音分段
-function splitSpeech(float32Array, isSpeech, minSilenceDuration, sampleRate) {
-    
-    // 初始化語音片段數組
-    const segments = [];
-    
-    // 初始化語音開始索引
-    let speechStart = -1;
-
-  // 遍歷音頻數據中的每個樣本
-  for (let i = 0; i < float32Array.length; i++) {
-    
-    // 如果當前樣本是語音
-    if (isSpeech[i]) {
-       
-        // 如果語音開始索引尚未設置，則設置為當前索引
-        if (speechStart === -1) {
-            speechStart = i;
-        }
-
-        // 如果當前樣本不是語音且語音開始索引已設置
-        } else if (speechStart !== -1) {
-            
-            // 計算靜音持續時間（單位：秒）
-            const silenceDuration = (i - speechStart) / sampleRate;
-
-            // 如果靜音持續時間大於等於最小靜音持續時間，則將語音片段添加到片段數組中
-            if (silenceDuration >= minSilenceDuration) {
-                segments.push({
-                    
-                    // 設定語音片段的開始位置
-                    start: speechStart,
-
-                    // 設定語音片段的結束位置
-                    end: i
-                });
-
-                // 重置 speechStart 變數，用於檢測下一個語音片段
-                speechStart = -1;
-            }
-        }
-    }
-
-    // 檢查是否有未完成的語音片段
-    if (speechStart !== -1) {
-        segments.push({
-            
-            // 設定未完成語音片段的開始位置
-            start: speechStart,
-
-            // 設定未完成語音片段的結束位置，即音訊數據的結尾
-            end: float32Array.length
-        });
-    }
-
-    // 返回找到的所有語音片段
-    return segments;
-}
-
 let audioData = []; // 存儲音訊數據的數組
+let currentSegment = []; // 存儲當前音訊片段的數組
 
-function processAudio(audioProcessingEvent, audioContext) {
+async function processAudio(audioProcessingEvent, audioContext) {
+    //console.log('processAudio');
 
-    let processedData = [];
-
-    // 獲取音訊數據
-    const inputBuffer = event.inputBuffer.getChannelData(0);
-
-    let audioData = []; // 存儲音訊數據的數組
-    let currentSegment = []; // 存儲當前音訊片段的數組
-    let silenceDuration = 0; // 連續低於閾值的音量持續時間
+    const worker = new Worker(URL.createObjectURL(new Blob([`
+    onmessage = function(e) {
+      const { inputBuffer, audioContext } = e.data;
+      let silenceDuration = 0;
+      let currentSegment = [];
+      let minVolume = Infinity;
+      let volumeThreshold_1 = 0;
   
-  
-    // 獲取音訊數據
-    //const inputBuffer = event.inputBuffer.getChannelData(0);
-
-    // 遍歷音訊數據，實現音量閾值切割和時間切割
-    for (let i = 0; i < inputBuffer.length; i++) {
-        
+      for (let i = 0; i < inputBuffer.length; i++) {
         const sample = inputBuffer[i];
-
-        // 檢查音量是否低於閾值
-        if (Math.abs(sample) < 0.01) {
-        silenceDuration += 1 / audioContext.sampleRate;
+        minVolume = Math.min(minVolume, Math.abs(sample));
+        if (i % audioContext.sampleRate === 0) {
+          volumeThreshold_1 = minVolume * 1.1;
+        }
+        if (Math.abs(sample) < volumeThreshold_1) {
+          silenceDuration += 1 / audioContext.sampleRate;
         } else {
-        silenceDuration = 0;
+          silenceDuration = 0;
         }
-
-        // 將音訊樣本添加到當前片段
         currentSegment.push(sample);
-
-        // 檢查是否需要切割音訊
         const segmentDuration = currentSegment.length / audioContext.sampleRate;
-        if (segmentDuration >= 30 || silenceDuration >= 0.5) {
-        
-        // 對當前片段進行前處理
-        const processedSegment = preprocessAudioSegment(currentSegment);
-
-        // 將處理後的音訊片段添加到音訊數據數組
-        audioData.push(processedSegment);
-
-        // 清空當前片段和連續低音量持續時間
-        currentSegment = [];
-        silenceDuration = 0;
-
-        // 檢查點：在控制台打印處理後的音訊片段長度
-        console.log('Processed audio segment length:', processedSegment.length);
+        if (segmentDuration >= 30 && silenceDuration >= 0.01) {
+          console.log('切割');
+          const segmentIndex = Math.floor(segmentDuration * audioContext.sampleRate);
+          const segmentToProcess = currentSegment.slice(0, segmentIndex);
+          currentSegment = currentSegment.slice(segmentIndex);
+          silenceDuration = 0;
+          postMessage(segmentToProcess);
         }
+      }
     }
+  `], { type: 'application/javascript' })));
   
-
-     // 將處理後的音訊數據添加到數組中
-    audioData.push(processedData);
-
-    // 檢查點：在控制台打印處理後的音訊數據長度
-    console.log('Processed audio data length:', audioData.length);
+  worker.onmessage = async function(e) {
+    const segmentToProcess = e.data;
+    const processedSegment = await preprocessAudioSegment(audioContext, segmentToProcess);
+    
+    
+    audioData.push(processedSegment);
+    transcribeAudio(processedSegment);
+  }
+  
+  async function processAudio(audioProcessingEvent, audioContext) {
+    const inputBuffer = audioProcessingEvent.inputBuffer.getChannelData(0);
+    worker.postMessage({ inputBuffer, audioContext });
+  }
 }
 
 // 音訊前處理函數
-function preprocessAudioSegment(segment) {
+async function preprocessAudioSegment(audioContext, segment) {
     // 1. 將音訊轉換為浮點數數組
     // segment 已經是一個浮點數數組，因此不需要進一步轉換
   
     // 2. 音訊降噪
     const denoisedSegment = denoiseAudio(segment);
+    //console.log('denoisedSegment length:', denoisedSegment.length);
   
     // 3. 增強語音信號
     const enhancedSegment = enhanceSpeech(denoisedSegment);
-  
+    //console.log('enhancedSegment length:', enhancedSegment.length);
+
     // 4. 音量正規化
     const normalizedSegment = normalizeVolume(enhancedSegment);
-  
+    //console.log('normalizedSegment length:', normalizedSegment.length);
+
     // 5. 頻率範圍過濾
-    const filteredSegment = filterFrequencyRange(normalizedSegment);
-  
+    const lowFrequency = 300;
+    const highFrequency = 3400;
+    const filteredSegment = await filterFrequencyRange(audioContext, normalizedSegment, lowFrequency, highFrequency); 
+    //console.log('filteredSegment length:', filteredSegment.length);
+
     // 6. 語音檢測
-    const speechDetectedSegment = detectSpeech(filteredSegment);
-  
+    //const speechDetectedSegment = detectSpeech(filteredSegment);
+    //console.log('speechDetectedSegment length:', speechDetectedSegment.length);
+
     // 7. 將浮點數數組轉換回適合傳輸的格式
-    const processedSegment = float32ArrayToWavBlob(speechDetectedSegment);
-  
+    const processedSegment = await float32ArrayToWavBlob(audioContext, filteredSegment);
+    //console.log('processedSegment size:', processedSegment.size);
+
     // 返回處理後的音訊片段
     return processedSegment;
-  }
+}
 
-// 合併音訊數據
-//const mergedAudioData = mergeAudioData(audioData);
+async function transcribeAudio(processedSegment) {
+    try {
+        // 讀取音頻檔案
+        const base64Audio = processedSegment.toString('base64');
 
-// 將合併後的音訊數據發送至 OpenAI 進行語音轉文字
-//sendToOpenAI(mergedAudioData);
+        // 向伺服器發送請求
+        const response = await fetch('http://localhost:3000/transcribe', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ audio: base64Audio })
+        });
+
+        console.log('OpenAI Processing');
+
+        // 解析伺服器的回應
+        const data = await response.json();
+
+        // 將辨識結果追加到全局變數中
+        transcript += data.text;
+
+        // 更新顯示元素的內容
+        document.getElementById('transcript').textContent = transcript;
+    } catch (error) {
+        // 處理錯誤
+        console.error(error);
+    }
+}
